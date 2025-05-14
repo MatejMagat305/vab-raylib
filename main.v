@@ -249,7 +249,7 @@ pub fn compile_raylib(opt android.CompileOptions, cliO cli.Options) ! {
 
 	// check if raylib floder is found else clone it
 	if !is_raylib {
-		return error('vab-raylib extension requires module `raylib` to be installed...')
+		return error('vab-raylib extension requires module `raylib` to be imported in the project...')
 	}
 	v_raylib_module_path := os.join_path(vxt.vmodules() or {
 		return error('${err_sig}: vmodules folder not found')
