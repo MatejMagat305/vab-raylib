@@ -29,7 +29,6 @@ const default_vab_sdl_options = cli.Options{
 
 const accepted_input_files = ['.v', '.apk', '.aab']
 
-	
 // main is a rough reimplementation of `vab`'s main function
 fn main() {
 	mut args := arguments()
@@ -144,11 +143,11 @@ fn main() {
 	// raylib
 	aco := opt.as_android_compile_options()
 	comp_opt := android.CompileOptions{
-	 	...aco
-	 	cache_key: if os.is_dir(input) || input_ext == '.v' { opt.input } else { '' }
-	 }
-	 compile_raylib(comp_opt, opt) or {
-		util.vab_error('Packaging did not succeed', details: '${err}')
+		...aco
+		cache_key: if os.is_dir(input) || input_ext == '.v' { opt.input } else { '' }
+	}
+	compile_raylib(comp_opt, opt) or {
+		util.vab_error('Compiling did not succeed', details: '${err}')
 		exit(1)
 	}
 	// =================================
@@ -156,7 +155,7 @@ fn main() {
 	apo := opt.as_android_package_options()
 	pck_opt := android.PackageOptions{
 		...apo
-		keystore:   keystore
+		keystore: keystore
 	}
 	android.package(pck_opt) or {
 		util.vab_error('Packaging did not succeed', details: '${err}')
@@ -196,7 +195,6 @@ fn deploy(deploy_opt android.DeployOptions) {
 	}
 }
 
-
 fn build_raylib(opt android.CompileOptions, raylib_path string, arch string) ! {
 	build_path := os.join_path(raylib_path, 'build')
 	// check if the library already exists or compile it
@@ -204,7 +202,7 @@ fn build_raylib(opt android.CompileOptions, raylib_path string, arch string) ! {
 		return
 	} else {
 		src_path := os.join_path(raylib_path, 'src')
-		ndk_path := ndk.root()
+		ndk_path := ndk.root_version(opt.ndk_version)
 		os.execute('make -C ${src_path} clean')
 		arch_name := if arch == 'arm64-v8a' {
 			'arm64'
@@ -228,9 +226,9 @@ fn build_raylib(opt android.CompileOptions, raylib_path string, arch string) ! {
 	}
 }
 
-fn download_raylib(raylib_path string) {
+fn download_raylib(raylib_c_path string) {
 	// clone raylib from github
-	os.execute('git clone https://github.com/raysan5/raylib.git ${raylib_path}')
+	os.execute('git clone https://github.com/raysan5/raylib.git ${raylib_c_path}')
 }
 
 pub fn compile_raylib(opt android.CompileOptions, cliO cli.Options) ! {
@@ -243,7 +241,7 @@ pub fn compile_raylib(opt android.CompileOptions, cliO cli.Options) ! {
 	v_meta_dump := android.compile_v_to_c(opt) or {
 		return IError(android.CompileError{
 			kind: .v_to_c
-			err: err.msg()
+			err:  err.msg()
 		})
 	}
 
@@ -251,26 +249,26 @@ pub fn compile_raylib(opt android.CompileOptions, cliO cli.Options) ! {
 
 	// check if raylib floder is found else clone it
 	if !is_raylib {
-		return error('THIS vab extension need build raylib, package raylib is mising.....')
+		return error('vab-raylib extension requires module `raylib` to be imported in the project...')
 	}
-	raylib_path := os.join_path(vxt.vmodules() or {
-		return error('${err_sig}:vmodules folder not found')
-	}, 'raylib', 'raylib')
-	if os.exists(raylib_path) {
+	v_raylib_module_path := os.join_path(vxt.vmodules() or {
+		return error('${err_sig}: vmodules folder not found')
+	}, 'raylib')
+	raylib_c_path := os.join_path(v_raylib_module_path, 'raylib')
+	if os.exists(raylib_c_path) {
 		for arch in opt.archs {
-			build_raylib(opt, raylib_path, arch) or {
+			build_raylib(opt, raylib_c_path, arch) or {
 				return error('cant build raylib ERROR: ${err}')
 			}
 		}
 	} else {
-		download_raylib(raylib_path)
+		download_raylib(raylib_c_path)
 		for arch in opt.archs {
-			build_raylib(opt, raylib_path, arch) or {
+			build_raylib(opt, raylib_c_path, arch) or {
 				return error('cant build raylib ERROR: ${err}')
 			}
 		}
 	}
-
 
 	v_cflags := v_meta_dump.c_flags
 	imported_modules := v_meta_dump.imports
@@ -335,7 +333,7 @@ pub fn compile_raylib(opt android.CompileOptions, cliO cli.Options) ! {
 	vicd := compile_v_imports_c_dependencies(opt, imported_modules) or {
 		return IError(android.CompileError{
 			kind: .c_to_o
-			err: err.msg()
+			err:  err.msg()
 		})
 	}
 	mut o_files := vicd.o_files.clone()
@@ -405,7 +403,7 @@ pub fn compile_raylib(opt android.CompileOptions, cliO cli.Options) ! {
 	android_includes << '-I"' + os.join_path(ndk_sysroot, 'usr', 'include') + '"'
 	android_includes << '-I"' + os.join_path(ndk_sysroot, 'usr', 'include', 'android') + '"'
 
-	//is_debug_build := opt.is_debug_build()
+	// is_debug_build := opt.is_debug_build()
 
 	// add needed flags for raylib
 	ldflags << '-lEGL'
@@ -413,8 +411,7 @@ pub fn compile_raylib(opt android.CompileOptions, cliO cli.Options) ! {
 	ldflags << '-u ANativeActivity_onCreate'
 	ldflags << '-lOpenSLES'
 	ldflags << '-DPLATFORM_ANDROID'
-	ldflags << '-DGRAPHICS_API_OPENGL_ES2'   
-
+	ldflags << '-DGRAPHICS_API_OPENGL_ES2'
 
 	if uses_gc {
 		includes << '-I"' + os.join_path(v_thirdparty_dir, 'libgc', 'include') + '"'
@@ -431,7 +428,7 @@ pub fn compile_raylib(opt android.CompileOptions, cliO cli.Options) ! {
 
 	mut arch_cc := map[string]string{}
 	mut arch_libs := map[string]string{}
-	for arch in archs {		
+	for arch in archs {
 		compiler := ndk.compiler(.c, opt.ndk_version, arch, opt.api_level) or {
 			return error('${err_sig}: failed getting NDK compiler.\n${err}')
 		}
@@ -455,17 +452,17 @@ pub fn compile_raylib(opt android.CompileOptions, cliO cli.Options) ! {
 
 	mut jobs := []util.ShellJob{}
 
-	mut src_dir := os.join_path(raylib_path, "raylib", "src")
+	mut src_dir := os.join_path(raylib_c_path, 'src')
 	includes << '-I"' + src_dir + '" '
 
 	if opt.verbosity > 0 {
 		println('Include ${src_dir}')
 	}
 	for arch in archs {
-		mut build_dir0 := os.join_path(raylib_path, "raylib", "build", arch)
-	    if opt.verbosity > 1 {
-	    	println('Include ${build_dir0}')
-	    }
+		mut build_dir0 := os.join_path(raylib_c_path, 'build', arch)
+		if opt.verbosity > 1 {
+			println('Include ${build_dir0}')
+		}
 		arch_cflags[arch] << [
 			'-target ' + ndk.compiler_triplet(arch) + opt.min_sdk_version.str(),
 			'-L"' + build_dir0 + '" ',
@@ -511,7 +508,7 @@ pub fn compile_raylib(opt android.CompileOptions, cliO cli.Options) ! {
 	util.run_jobs(jobs, opt.parallel, opt.verbosity) or {
 		return IError(android.CompileError{
 			kind: .c_to_o
-			err: err.msg()
+			err:  err.msg()
 		})
 	}
 	jobs.clear()
@@ -556,7 +553,7 @@ pub fn compile_raylib(opt android.CompileOptions, cliO cli.Options) ! {
 		util.run_jobs(jobs, opt.parallel, opt.verbosity) or {
 			return IError(android.CompileError{
 				kind: .o_to_so
-				err: err.msg()
+				err:  err.msg()
 			})
 		}
 
@@ -647,7 +644,7 @@ pub fn v_dump_meta(opt VCompileOptions) !VMetaInfo {
 	// VCROSS_COMPILER_NAME is needed (on at least Windows) - just get whatever compiler is available
 	os.setenv('VCROSS_COMPILER_NAME', ndk.compiler_min_api(.c, ndk.default_version(),
 		'arm64-v8a') or { '' }, true)
-	
+
 	verbosity_print_cmd(v_cmd, opt.verbosity)
 	v_dump_res := run(v_cmd)
 	if opt.verbosity > 3 {
@@ -819,9 +816,6 @@ pub fn compile_v_imports_c_dependencies(opt android.CompileOptions, imported_mod
 		a_files: a_files
 	}
 }
-			
-
-			
 
 // verbosity_print_cmd prints information about the `args` at certain `verbosity` levels.
 fn verbosity_print_cmd(args []string, verbosity int) {
