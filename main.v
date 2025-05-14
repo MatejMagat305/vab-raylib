@@ -9,8 +9,10 @@ import vab.cli
 import vab.vxt
 import vab.util
 import vab.android
+import vab.android.util as androidutil
 import vab.android.ndk
-	
+import crypto.md5
+
 const default_package_id = 'io.v.android.raylib'
 const default_activity_name = 'VRaylibActivity'
 
@@ -145,10 +147,10 @@ fn main() {
 	 	...aco
 	 	cache_key: if os.is_dir(input) || input_ext == '.v' { opt.input } else { '' }
 	 }
-	 compile_raylib(comp_opt) or {
-	 	util.vab_error('Compiling did not succeed', details: '${err}')
-	 	exit(1)
-	 }
+	 compile_raylib(comp_opt, opt) or {
+		util.vab_error('Packaging did not succeed', details: '${err}')
+		exit(1)
+	}
 	// =================================
 
 	apo := opt.as_android_package_options()
@@ -195,7 +197,7 @@ fn deploy(deploy_opt android.DeployOptions) {
 }
 
 
-fn build_raylib(opt android.VCompileOptions, raylib_path string, arch string) ! {
+fn build_raylib(opt android.CompileOptions, raylib_path string, arch string) ! {
 	build_path := os.join_path(raylib_path, 'build')
 	// check if the library already exists or compile it
 	if os.exists(os.join_path(build_path, arch, 'libraylib.a')) {
@@ -216,6 +218,7 @@ fn build_raylib(opt android.VCompileOptions, raylib_path string, arch string) ! 
 		if arch_name !in ['arm64', 'arm', 'x86', 'x86_64'] {
 			return error('${arch_name} is now a known architecture')
 		}
+		println('make -C ${src_path} PLATFORM=PLATFORM_ANDROID ANDROID_NDK=${ndk_path} ANDROID_ARCH=${arch_name} ANDROID_API_VERSION=${opt.api_level} ')
 		os.execute('make -C ${src_path} PLATFORM=PLATFORM_ANDROID ANDROID_NDK=${ndk_path} ANDROID_ARCH=${arch_name} ANDROID_API_VERSION=${opt.api_level} ')
 		taget_path := os.join_path(build_path, arch)
 		os.mkdir_all(taget_path) or { return error('failed making directory "${taget_path}"') }
@@ -227,18 +230,18 @@ fn build_raylib(opt android.VCompileOptions, raylib_path string, arch string) ! 
 
 fn download_raylib(raylib_path string) {
 	// clone raylib from github
-	os.execute('git clone https://github.com/raysan5/raylib.git -o ${raylib_path}')
+	os.execute('git clone https://github.com/raysan5/raylib.git ${raylib_path}')
 }
 
-pub fn compile_raylib(opt CompileOptions) ! {
+pub fn compile_raylib(opt android.CompileOptions, cliO cli.Options) ! {
 	err_sig := @MOD + '.' + @FN
 	os.mkdir_all(opt.work_dir) or {
 		return error('${err_sig}: failed making directory "${opt.work_dir}". ${err}')
 	}
 	build_dir := opt.build_directory()!
 
-	v_meta_dump := compile_v_to_c(opt) or {
-		return IError(CompileError{
+	v_meta_dump := android.compile_v_to_c(opt) or {
+		return IError(android.CompileError{
 			kind: .v_to_c
 			err: err.msg()
 		})
@@ -247,7 +250,7 @@ pub fn compile_raylib(opt CompileOptions) ! {
 	is_raylib := 'raylib' in v_meta_dump.imports
 
 	// check if raylib floder is found else clone it
-	if is_raylib {
+	if !is_raylib {
 		return error('THIS vab extension need build raylib, package raylib is mising.....')
 	}
 	raylib_path := os.join_path(vxt.vmodules() or {
@@ -330,7 +333,7 @@ pub fn compile_raylib(opt CompileOptions) ! {
 	}
 
 	vicd := compile_v_imports_c_dependencies(opt, imported_modules) or {
-		return IError(CompileError{
+		return IError(android.CompileError{
 			kind: .c_to_o
 			err: err.msg()
 		})
@@ -409,6 +412,9 @@ pub fn compile_raylib(opt CompileOptions) ! {
 	ldflags << '-lGLESv2'
 	ldflags << '-u ANativeActivity_onCreate'
 	ldflags << '-lOpenSLES'
+	ldflags << '-DPLATFORM_ANDROID'
+	ldflags << '-DGRAPHICS_API_OPENGL_ES2'   
+
 
 	if uses_gc {
 		includes << '-I"' + os.join_path(v_thirdparty_dir, 'libgc', 'include') + '"'
@@ -449,9 +455,22 @@ pub fn compile_raylib(opt CompileOptions) ! {
 
 	mut jobs := []util.ShellJob{}
 
+	mut src_dir := os.join_path(raylib_path, "raylib", "src")
+	includes << '-I"' + src_dir + '" '
+
+	if opt.verbosity > 0 {
+		println('Include ${src_dir}')
+	}
 	for arch in archs {
+		mut build_dir0 := os.join_path(raylib_path, "raylib", "build", arch)
+	    if opt.verbosity > 1 {
+	    	println('Include ${build_dir0}')
+	    }
 		arch_cflags[arch] << [
 			'-target ' + ndk.compiler_triplet(arch) + opt.min_sdk_version.str(),
+			'-L"' + build_dir0 + '" ',
+			'-L"' + src_dir + '" ',
+			'-I"' + build_dir0 + '" ',
 		]
 		if arch == 'armeabi-v7a' {
 			arch_cflags[arch] << ['-march=armv7-a']
@@ -470,7 +489,6 @@ pub fn compile_raylib(opt CompileOptions) ! {
 		arch_o_file := os.join_path(arch_o_dir, '${opt.lib_name}.o')
 		// Compile .o
 		build_cmd := [
-			'-l:build/${arch}/libraylib.a'
 			arch_cc[arch],
 			cflags.join(' '),
 			android_includes.join(' '),
@@ -478,6 +496,8 @@ pub fn compile_raylib(opt CompileOptions) ! {
 			defines.join(' '),
 			arch_cflags[arch].join(' '),
 			'-c "${v_output_file}"',
+			'-l:libraylib.a',
+			'-l:raylib',
 			'-o "${arch_o_file}"',
 		]
 
@@ -489,7 +509,7 @@ pub fn compile_raylib(opt CompileOptions) ! {
 	}
 
 	util.run_jobs(jobs, opt.parallel, opt.verbosity) or {
-		return IError(CompileError{
+		return IError(android.CompileError{
 			kind: .c_to_o
 			err: err.msg()
 		})
@@ -528,13 +548,13 @@ pub fn compile_raylib(opt CompileOptions) ! {
 				build_cmd << '-L ${lflags}'
 			}
 
-			jobs << job_util.ShellJob{
+			jobs << util.ShellJob{
 				cmd: build_cmd
 			}
 		}
 
-		job_util.run_jobs(jobs, opt.parallel, opt.verbosity) or {
-			return IError(CompileError{
+		util.run_jobs(jobs, opt.parallel, opt.verbosity) or {
+			return IError(android.CompileError{
 				kind: .o_to_so
 				err: err.msg()
 			})
@@ -627,9 +647,9 @@ pub fn v_dump_meta(opt VCompileOptions) !VMetaInfo {
 	// VCROSS_COMPILER_NAME is needed (on at least Windows) - just get whatever compiler is available
 	os.setenv('VCROSS_COMPILER_NAME', ndk.compiler_min_api(.c, ndk.default_version(),
 		'arm64-v8a') or { '' }, true)
-
-	util.verbosity_print_cmd(v_cmd, opt.verbosity)
-	v_dump_res := util.run(v_cmd)
+	
+	verbosity_print_cmd(v_cmd, opt.verbosity)
+	v_dump_res := run(v_cmd)
 	if opt.verbosity > 3 {
 		println(v_dump_res)
 	}
@@ -663,7 +683,7 @@ pub:
 }
 
 // compile_v_imports_c_dependencies compiles the C dependencies of V's module imports.
-pub fn compile_v_imports_c_dependencies(opt android.VCompileOptions, imported_modules []string) !VImportCDeps {
+pub fn compile_v_imports_c_dependencies(opt android.CompileOptions, imported_modules []string) !VImportCDeps {
 	err_sig := @MOD + '.' + @FN
 
 	mut o_files := map[string][]string{}
@@ -695,7 +715,7 @@ pub fn compile_v_imports_c_dependencies(opt android.VCompileOptions, imported_mo
 
 	archs := opt.archs()!
 
-	mut jobs := []job_util.ShellJob{}
+	mut jobs := []util.ShellJob{}
 	for arch in archs {
 		arch_o_dir := os.join_path(build_dir, 'o', arch)
 		if !os.is_dir(arch_o_dir) {
@@ -734,15 +754,15 @@ pub fn compile_v_imports_c_dependencies(opt android.VCompileOptions, imported_mo
 				'-c "' + os.join_path(v_thirdparty_dir, 'libgc', 'gc.c') + '"',
 				'-o "${o_file}"',
 			]
-			util.verbosity_print_cmd(build_cmd, opt.verbosity)
-			o_res := util.run_or_error(build_cmd)!
+			verbosity_print_cmd(build_cmd, opt.verbosity)
+			o_res := androidutil.run_or_error(build_cmd)!
 			if opt.verbosity > 2 {
 				eprintln(o_res)
 			}
 
 			o_files[arch] << o_file
 
-			jobs << job_util.ShellJob{
+			jobs << util.ShellJob{
 				cmd: build_cmd
 			}
 		}
@@ -765,7 +785,7 @@ pub fn compile_v_imports_c_dependencies(opt android.VCompileOptions, imported_mo
 
 			o_files[arch] << o_file
 
-			jobs << job_util.ShellJob{
+			jobs << util.ShellJob{
 				cmd: build_cmd
 			}
 		}
@@ -786,13 +806,13 @@ pub fn compile_v_imports_c_dependencies(opt android.VCompileOptions, imported_mo
 
 			o_files[arch] << o_file
 
-			jobs << job_util.ShellJob{
+			jobs << util.ShellJob{
 				cmd: build_cmd
 			}
 		}
 	}
 
-	job_util.run_jobs(jobs, opt.parallel, opt.verbosity)!
+	util.run_jobs(jobs, opt.parallel, opt.verbosity)!
 
 	return VImportCDeps{
 		o_files: o_files
@@ -802,3 +822,23 @@ pub fn compile_v_imports_c_dependencies(opt android.VCompileOptions, imported_mo
 			
 
 			
+
+// verbosity_print_cmd prints information about the `args` at certain `verbosity` levels.
+fn verbosity_print_cmd(args []string, verbosity int) {
+	if args.len > 0 && verbosity > 1 {
+		cmd_short := args[0].all_after_last(os.path_separator)
+		mut output := 'Running ${cmd_short} From: ${os.getwd()}'
+		if verbosity > 2 {
+			output += '\n' + args.join(' ')
+		}
+		println(output)
+	}
+}
+
+fn run(args []string) os.Result {
+	res := os.execute(args.join(' '))
+	if res.exit_code < 0 {
+		return os.Result{1, ''}
+	}
+	return res
+}
