@@ -483,12 +483,12 @@ pub fn compile_raylib(opt CompileOptions) ! {
 
 		o_files[arch] << arch_o_file
 
-		jobs << job_util.ShellJob{
+		jobs << util.ShellJob{
 			cmd: build_cmd
 		}
 	}
 
-	job_util.run_jobs(jobs, opt.parallel, opt.verbosity) or {
+	util.run_jobs(jobs, opt.parallel, opt.verbosity) or {
 		return IError(CompileError{
 			kind: .c_to_o
 			err: err.msg()
