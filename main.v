@@ -14,7 +14,8 @@ import vab.paths
 import vab.android.util as vabutil
 import vab.android
 import vab.android.ndk
-
+import vab.util as job_util
+	
 const default_package_id = 'io.v.android.raylib'
 const default_activity_name = 'VRaylibActivity'
 
