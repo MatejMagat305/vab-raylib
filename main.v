@@ -5,16 +5,11 @@ import os
 // Compiling and running this should never yield a SDL compilation error, so:
 // import sdl // NO-NO
 import flag
-import semver
-import net.http
 import vab.cli
 import vab.vxt
 import vab.util
-import vab.paths
-import vab.android.util as vabutil
 import vab.android
 import vab.android.ndk
-import vab.util as job_util
 	
 const default_package_id = 'io.v.android.raylib'
 const default_activity_name = 'VRaylibActivity'
@@ -30,14 +25,6 @@ const default_vab_sdl_options = cli.Options{
 	default_activity_name: default_activity_name
 }
 
-const exe_version = version()
-const exe_name = os.file_name(os.executable())
-const exe_short_name = os.file_name(os.executable()).replace('.exe', '')
-const exe_dir = os.dir(os.real_path(os.executable()))
-const exe_description = '${exe_short_name}
-compile SDL for Android.
-'
-const exe_git_hash = ab_commit_hash()
 const accepted_input_files = ['.v', '.apk', '.aab']
 
 	
@@ -99,7 +86,6 @@ fn main() {
 		cli.check_essentials(false)
 		opt.resolve(false)
 		cli.doctor(opt)
-		sdl_doctor(sdl_opt) // Add this extra command's output at the bottom
 		exit(0)
 	}
 
@@ -169,8 +155,6 @@ fn main() {
 	pck_opt := android.PackageOptions{
 		...apo
 		keystore:   keystore
-		base_files: base_files_path // NOTE: these are implicitly picked up by `vab` relative to the executable, this project uses a dynamic approach. See also: default_base_files_path in vab sources
-		// prepare_base_fn:
 	}
 	android.package(pck_opt) or {
 		util.vab_error('Packaging did not succeed', details: '${err}')
@@ -211,7 +195,7 @@ fn deploy(deploy_opt android.DeployOptions) {
 }
 
 
-fn build_raylib(opt CompileOptions, raylib_path string, arch string) ! {
+fn build_raylib(opt android.VCompileOptions, raylib_path string, arch string) ! {
 	build_path := os.join_path(raylib_path, 'build')
 	// check if the library already exists or compile it
 	if os.exists(os.join_path(build_path, arch, 'libraylib.a')) {
@@ -418,7 +402,7 @@ pub fn compile_raylib(opt CompileOptions) ! {
 	android_includes << '-I"' + os.join_path(ndk_sysroot, 'usr', 'include') + '"'
 	android_includes << '-I"' + os.join_path(ndk_sysroot, 'usr', 'include', 'android') + '"'
 
-	is_debug_build := opt.is_debug_build()
+	//is_debug_build := opt.is_debug_build()
 
 	// add needed flags for raylib
 	ldflags << '-lEGL'
@@ -463,7 +447,7 @@ pub fn compile_raylib(opt CompileOptions) ! {
 		println('Compiling C output for ${archs}' + if opt.parallel { ' in parallel' } else { '' })
 	}
 
-	mut jobs := []job_util.ShellJob{}
+	mut jobs := []util.ShellJob{}
 
 	for arch in archs {
 		arch_cflags[arch] << [
@@ -679,7 +663,7 @@ pub:
 }
 
 // compile_v_imports_c_dependencies compiles the C dependencies of V's module imports.
-pub fn compile_v_imports_c_dependencies(opt CompileOptions, imported_modules []string) !VImportCDeps {
+pub fn compile_v_imports_c_dependencies(opt android.VCompileOptions, imported_modules []string) !VImportCDeps {
 	err_sig := @MOD + '.' + @FN
 
 	mut o_files := map[string][]string{}
