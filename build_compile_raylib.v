@@ -30,15 +30,13 @@ fn build_raylib(opt android.CompileOptions, raylib_path string, arch string) ! {
 			return error('${arch_name} is now a known architecture')
 		}
 		ndk_sysroot := ndk.sysroot_path(opt.ndk_version) or {
-			return error('${err_sig}: getting NDK sysroot path.\n${err}')
+			return error('getting NDK sysroot path.\n${err}')
 		}
 
-		ndk_home := ndk.home() or {
-			return error('${err_sig}: getting NDK home path.\n${err}')
-		}
-		
+		ndk_home := ndk.root() 
+
 		ndk_include :=  os.join_path(ndk_sysroot, 'usr', 'include')
-		ndk_include_triple :=  os.join_path(ndk_include, ndk.compiler_triplet())
+		ndk_include_triple :=  os.join_path(ndk_include, ndk.compiler_triplet(arch))
 		ndk_native_app_glue := os.join_path(ndk_home, 'sources', 'android', 'native_app_glue')
 
 		if opt.verbosity > 0 {
