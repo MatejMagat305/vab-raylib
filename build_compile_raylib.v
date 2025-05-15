@@ -29,10 +29,22 @@ fn build_raylib(opt android.CompileOptions, raylib_path string, arch string) ! {
 		if arch_name !in ['arm64', 'arm', 'x86', 'x86_64'] {
 			return error('${arch_name} is now a known architecture')
 		}
-		if opt.verbosity > 0 {
-			println('make -C ${src_path} PLATFORM=PLATFORM_ANDROID ANDROID_NDK=${ndk_path} ANDROID_ARCH=${arch_name} ANDROID_API_VERSION=${opt.api_level} ')			
+		ndk_sysroot := ndk.sysroot_path(opt.ndk_version) or {
+			return error('${err_sig}: getting NDK sysroot path.\n${err}')
 		}
-		os.execute('make -C ${src_path} PLATFORM=PLATFORM_ANDROID ANDROID_NDK=${ndk_path} ANDROID_ARCH=${arch_name} ANDROID_API_VERSION=${opt.api_level} ')
+
+		ndk_home := ndk.home() or {
+			return error('${err_sig}: getting NDK home path.\n${err}')
+		}
+		
+		ndk_include :=  os.join_path(ndk_sysroot, 'usr', 'include')
+		ndk_include_triple :=  os.join_path(ndk_include, ndk.compiler_triplet())
+		ndk_native_app_glue := os.join_path(ndk_home, 'sources', 'android', 'native_app_glue')
+
+		if opt.verbosity > 0 {
+			println('make -C ${src_path} PLATFORM=PLATFORM_ANDROID ANDROID_NDK=${ndk_path} ANDROID_ARCH=${arch_name} ANDROID_API_VERSION=${opt.api_level} INCLUDE_PATHS="-I${ndk_native_app_glue} -I${ndk_include} -I${ndk_include_triple}" ')
+		}
+		os.execute('make -C ${src_path} PLATFORM=PLATFORM_ANDROID ANDROID_NDK=${ndk_path} ANDROID_ARCH=${arch_name} ANDROID_API_VERSION=${opt.api_level} INCLUDE_PATHS="-I${ndk_native_app_glue} -I${ndk_include} -I${ndk_include_triple}" ')
 		taget_path := os.join_path(build_path, arch)
 		os.mkdir_all(taget_path) or { return error('failed making directory "${taget_path}"') }
 		os.mv(os.join_path(src_path, 'libraylib.a'), taget_path) or {
