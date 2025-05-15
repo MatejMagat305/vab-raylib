@@ -30,9 +30,9 @@ fn build_raylib(opt android.CompileOptions, raylib_path string, arch string) ! {
 			return error('${arch_name} is now a known architecture')
 		}
 		if opt.verbosity > 0 {
-			println('make -C ${src_path} PLATFORM=PLATFORM_ANDROID ANDROID_NDK=${ndk_path} ANDROID_ARCH=${arch_name} ANDROID_API_VERSION=${opt.api_level} ')			
+			println('make -C ${src_path} PLATFORM=PLATFORM_ANDROID ANDROID_NDK=${ndk_path} ANDROID_ARCH=${arch_name} ANDROID_API_VERSION=${opt.api_level} INCLUDE_PATHS="-I\$ANDROID_NDK_HOME/sources/android/native_app_glue -I\$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include -I\$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android" ')			
 		}
-		os.execute('make -C ${src_path} PLATFORM=PLATFORM_ANDROID ANDROID_NDK=${ndk_path} ANDROID_ARCH=${arch_name} ANDROID_API_VERSION=${opt.api_level} ')
+		os.execute('make -C ${src_path} PLATFORM=PLATFORM_ANDROID ANDROID_NDK=${ndk_path} ANDROID_ARCH=${arch_name} ANDROID_API_VERSION=${opt.api_level} INCLUDE_PATHS="-I\$ANDROID_NDK_HOME/sources/android/native_app_glue -I\$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include -I\$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android" ')
 		taget_path := os.join_path(build_path, arch)
 		os.mkdir_all(taget_path) or { return error('failed making directory "${taget_path}"') }
 		os.mv(os.join_path(src_path, 'libraylib.a'), taget_path) or {
